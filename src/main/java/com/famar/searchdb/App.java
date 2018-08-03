@@ -12,7 +12,7 @@ public class App {
 	public static void main(String[] args) {
 		System.out.println("Welcome to famar-db!");
 
-		FDBDocumentService db = new FDBDocumentService();
+		FDBDocumentService db = new FDBDocumentService("test");
 
 		// Map<String,String> doc = new HashMap<>();
 		// doc.put("name", "fabian");

@@ -41,13 +41,13 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.famar.searchdb.admin.FDBCollectionSettings;
+import com.famar.searchdb.admin.FDBCollectionsManagerService;
 import com.famar.searchdb.visitors.FetchSourceFieldsVisitor;
 
 public class FDBDocumentService{
 
-//	private static final String DATA_PATH = "/var/data/famardb";
-	private static final String DATA_PATH = "/home/famartinez/software/senseJuanzu/github/data";
-
+//	private static final String DATA_PATH = "/home/famartinez/software/senseJuanzu/github/data";
 
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 	
@@ -55,9 +55,14 @@ public class FDBDocumentService{
 	private FSDirectory directory;
 	private Analyzer analyzer;
 	
-	public FDBDocumentService() {
+	public FDBDocumentService(String collection) {
         try {
-			Path location = Paths.get(DATA_PATH);
+//			Path location = Paths.get(FamarDBConstants.DATA_PATH);
+        	
+        	FDBCollectionsManagerService collectionsManager = FDBCollectionsManagerService.getInstance();
+        	FDBCollectionSettings collectionSettings = collectionsManager.getCollectionByName(collection);
+        	Path location = Paths.get(FamarDBConstants.DATA_PATH+"/"+collectionSettings.getUuid());
+        	
 			LockFactory lockFactory = SimpleFSLockFactory.INSTANCE;
 			
             this.directory = FSDirectory.open(location, lockFactory); // use lucene defaults
