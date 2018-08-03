@@ -3,13 +3,12 @@ package com.famar.searchdb.admin;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
@@ -52,16 +51,18 @@ public class FDBCollectionsManagerService {
 		return instance;
 	}
 	
+	private volatile Map<String, FDBCollectionSettings> collections;
+	
+	public FDBCollectionsManagerService() {
+		this.collections = new ConcurrentHashMap<>(2);
+	}
+
 	public FDBCollectionSettings getCollectionByName(String collection) {
+		return collections.computeIfAbsent(collection, this::loadCollection);
+	}
+	
+	private FDBCollectionSettings loadCollection(String collection) {
 		
-//		MessageDigest digest;
-//		try {
-//			digest = MessageDigest.getInstance("SHA-256");
-//		} catch (NoSuchAlgorithmException e) {
-//			logger.error("",e);
-//			throw new FDBException(e);
-//		}
-//		byte[] hash = digest.digest(collection.getBytes(StandardCharsets.UTF_8));
 		Path collectionDefinitionFile = Paths.get(FamarDBConstants.ADMIN_PATH+"/"+collection+".fdb");
 		if(Files.exists(collectionDefinitionFile)) {
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -91,6 +92,11 @@ public class FDBCollectionsManagerService {
 			}
 			return settings;
 		}
+	}
+	
+	public Path getCollectionLocation(String collection) {
+    	FDBCollectionSettings collectionSettings = getCollectionByName(collection);
+    	return Paths.get(FamarDBConstants.DATA_PATH+"/"+collectionSettings.getUuid());
 	}
 	
 }

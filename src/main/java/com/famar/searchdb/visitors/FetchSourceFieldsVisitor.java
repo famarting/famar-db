@@ -2,10 +2,8 @@ package com.famar.searchdb.visitors;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,16 +12,26 @@ import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.util.BytesRef;
 
 import com.famar.searchdb.FamarDBConstants;
+import com.famar.searchdb.FamarDBDocument;
 
 public class FetchSourceFieldsVisitor extends StoredFieldVisitor {
 
 	protected BytesRef source;
 	protected UUID uuid;
-	protected Map<String, List<Object>> fieldsValues;
+	protected Map<String, Object> fieldsValues;
 
+	private FamarDBDocument document;
+	
 	public FetchSourceFieldsVisitor() {
 		reset();
     }
+
+	public FamarDBDocument getDocument() {
+		if(document==null) {
+			document = new FamarDBDocument(uuid.toString(), source.bytes, this.fields());
+		}
+		return document;
+	}
 
 	@Override
 	public Status needsField(FieldInfo fieldInfo) throws IOException {
@@ -77,27 +85,23 @@ public class FetchSourceFieldsVisitor extends StoredFieldVisitor {
 		return uuid;
 	}
 
-	public Map<String, List<Object>> fields() {
+	public Map<String, Object> fields() {
 		return fieldsValues != null ? fieldsValues : Collections.emptyMap();
 	}
 
 	public void reset() {
-		if (fieldsValues != null)
+		if (fieldsValues != null) {
 			fieldsValues.clear();
+		}
 		source = null;
 		uuid = null;
+		document = null;
 	}
 
 	void addValue(String name, Object value) {
 		if (fieldsValues == null) {
 			fieldsValues = new HashMap<>();
 		}
-
-		List<Object> values = fieldsValues.get(name);
-		if (values == null) {
-			values = new ArrayList<>(2);
-			fieldsValues.put(name, values);
-		}
-		values.add(value);
+		fieldsValues.put(name, value);
 	}
 }
