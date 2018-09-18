@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
 
 import com.famar.searchdb.FDBDocumentService;
 import com.famar.searchdb.FDBException;
-import com.famar.searchdb.FDBSaveDocumentResponse;
 
 @Path("document")
 @Produces(MediaType.APPLICATION_JSON)

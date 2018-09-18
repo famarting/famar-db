@@ -1,4 +1,4 @@
-package com.famar.searchdb;
+package com.famar.searchdb.rest;
 
 public class FDBSaveDocumentResponse {
 

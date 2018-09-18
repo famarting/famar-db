@@ -30,6 +30,14 @@ public class FDBDocumentService {
 		return getCollection(collection).save(json);
 	}
 	
+	public void update(String collection, String uuid, byte[] json) {
+		getCollection(collection).update(uuid, json);
+	}
+	
+	public void delete(String collection, String uuid) {
+		getCollection(collection).delete(uuid);
+	}
+	
 	public Optional<FamarDBDocument> get(String collection, String uuid) {
 		return Optional.ofNullable(getCollection(collection).get(uuid));
 	}

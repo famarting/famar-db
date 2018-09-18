@@ -17,6 +17,7 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.IntPoint;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.StoredField;
@@ -26,8 +27,11 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.queryparser.xml.builders.TermQueryBuilder;
+import org.apache.lucene.queryparser.xml.builders.TermsQueryBuilder;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -37,6 +41,8 @@ import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.LockFactory;
 import org.apache.lucene.store.LockObtainFailedException;
 import org.apache.lucene.store.SimpleFSLockFactory;
+import org.codehaus.jackson.JsonGenerationException;
+import org.codehaus.jackson.map.JsonMappingException;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +55,6 @@ public class FDBDocumentCollectionService{
 	private Logger logger = LoggerFactory.getLogger(this.getClass());
 	
 	//properties
-//	private IndexWriterConfig config;
 	private FSDirectory directory;
 	private Analyzer analyzer;
 	
@@ -71,25 +76,13 @@ public class FDBDocumentCollectionService{
 			throw new FDBException(e);
 		}
         this.analyzer = new StandardAnalyzer();
-//        this.config = new IndexWriterConfig(analyzer);
 	}
 	
 	public String save(byte[] json) {
 		
-		FDBLuceneDocument doc;
-		try {
-			Map<String,Object> fieldsMap = (Map<String,Object>) new ObjectMapper().readValue(json, Map.class);
-			doc = parseFieldsMap(fieldsMap);
-		} catch (RuntimeException | IOException e) {
-			logger.error("",e);
-			throw new FDBException(e);
-		}
+		FDBLuceneDocument luceneDocument = parseJsonToLuceneDocument(json);
 		
-		return internalSave(doc, json);
-	}
-	
-	private String internalSave(FDBLuceneDocument luceneDocument, byte[] documentSource) {
-		String uuid = prepareDocument(luceneDocument, documentSource);
+		String uuid = prepareDocument(luceneDocument, json, null);
         try {
         	IndexWriter writer = createWriterRetrying();
 			writer.addDocument(luceneDocument);
@@ -99,14 +92,54 @@ public class FDBDocumentCollectionService{
 			logger.error("",e);
 			throw new FDBException(e);
 		}
+    }
+
+	public void update(String uuid, byte[] json) {
+		FDBLuceneDocument luceneDocument = parseJsonToLuceneDocument(json);
+		prepareDocument(luceneDocument, json, uuid);
+        try {
+        	IndexWriter writer = createWriterRetrying();
+			writer.updateDocument(documentUuidTerm(uuid), luceneDocument);
+			writer.close();
+		} catch (IOException e) {
+			logger.error("",e);
+			throw new FDBException(e);
+		}
+	}
+	
+	public void delete(String uuid) {
+        try {
+        	IndexWriter writer = createWriterRetrying();
+        	writer.deleteDocuments(documentUuidTerm(uuid));
+			writer.close();
+		} catch (IOException e) {
+			logger.error("",e);
+			throw new FDBException(e);
+		}
 	}
 
-	private String prepareDocument(FDBLuceneDocument luceneDocument, byte[] documentSource) {
+	private Term documentUuidTerm(String uuid) {
+		return new Term(FamarDBConstants.FAMARDB_UUID, uuid);
+	}
+	
+	private FDBLuceneDocument parseJsonToLuceneDocument(byte[] json) {
+		FDBLuceneDocument doc;
+		try {
+			Map<String,Object> fieldsMap = (Map<String,Object>) new ObjectMapper().readValue(json, Map.class);
+			doc = parseFieldsMap(fieldsMap);
+		} catch (RuntimeException | IOException e) {
+			logger.error("",e);
+			throw new FDBException(e);
+		}
+		return doc;
+	}
+	
+	private String prepareDocument(FDBLuceneDocument luceneDocument, byte[] documentSource, String uuid) {
 		luceneDocument.add(new StoredField(FamarDBConstants.FIELDNAME_SOURCE, documentSource));
 		
-		String uuid = UUID.randomUUID().toString();
-		luceneDocument.add(new StringField(FamarDBConstants.FAMARDB_UUID, uuid, Store.YES));
-		return uuid;
+		String uuidField = uuid==null ? UUID.randomUUID().toString() : uuid;
+		luceneDocument.add(new StringField(FamarDBConstants.FAMARDB_UUID, uuidField, Store.YES));
+		return uuidField;
 	}
 	
 	public Collection<FamarDBDocument> search(String querystr) {
@@ -142,7 +175,7 @@ public class FDBDocumentCollectionService{
 	}
 	
 	public FamarDBDocument get(String uuid) {
-		Query q = new TermQuery(new Term(FamarDBConstants.FAMARDB_UUID, uuid));
+		Query q = new TermQuery(documentUuidTerm(uuid));
 		IndexReader reader = getIndexReader();
 		try {
 			IndexSearcher searcher = new IndexSearcher(reader);
@@ -180,6 +213,12 @@ public class FDBDocumentCollectionService{
 			throw new FDBException(e);
 		}
 		return q;
+	}
+	
+	public static void main(String[] args) throws ParseException, JsonGenerationException, JsonMappingException, IOException {
+		String str = "a:b and c:d and e<>t or test:aaa";
+		Query q =new QueryParser("", new StandardAnalyzer()).parse(str); 
+		System.out.println(new ObjectMapper().writeValueAsString(q));
 	}
 	
 	private IndexWriter createWriterRetrying() throws IOException {
@@ -221,31 +260,33 @@ public class FDBDocumentCollectionService{
 	}
 	
 	private Stream<Field> toField(String name, Object value) {
-		Field field = null;
+//		Field field = null;
 		Stream.Builder<Field> fields = Stream.builder();
 		if(value instanceof String) {
-			field = new StringField(name, (String)value, Store.YES);
+			fields.add(new StringField(name, (String)value, Store.YES));
 		} else if(value instanceof Integer) {
 			Integer v = (Integer) value;
 			fields.add(new StoredField(name, v))
 				.add(new IntPoint(name, v))
 				.add(new NumericDocValuesField(name, v));
-			field = new StoredField(name, (Integer) value);
 		} else if(value instanceof Long) {
-			field = new StoredField(name, (Long) value);
-			//TODO add multiple fields for numeric types like i did in integer
+			Long v = (Long) value;
+			fields.add(new StoredField(name, v))
+				.add(new LongPoint(name, v))
+				.add(new NumericDocValuesField(name, v));
 		} else if(value instanceof Map) {
 			Map<String,Object> obj = (Map<String,Object>) value;
 			return obj.entrySet().stream().map(e->new AbstractMap.SimpleEntry<>(name+"."+e.getKey(), e.getValue())).flatMap(this::toField);
 		} else if(value instanceof List) {
-			return Stream.empty();
-//			List<Object> obj = (List<Object>) value;
-//			return obj.stream().flatMap(v -> this.toField(name, v));
+//			return Stream.empty();
+			List<Object> obj = (List<Object>) value;
+			return obj.stream().flatMap(v -> this.toField(name, v));
 		}
-		if(field==null) {
-			throw new FDBException("incompatible field type");			
-		}
-		return Stream.of(field);
+		return fields.build();
+//		if(field==null) {
+//			throw new FDBException("incompatible field type");			
+//		}
+//		return Stream.of(fields);
 	}
 //	
 //	private Field toField(Entry<String, Object> entry) {
